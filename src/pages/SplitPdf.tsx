@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,8 @@ const SplitPdf = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [splitMode, setSplitMode] = useState<string>('all');
   const [pageRange, setPageRange] = useState<string>('');
+  const [rangeStart, setRangeStart] = useState<string>('');
+  const [rangeEnd, setRangeEnd] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [pageCount, setPageCount] = useState<number>(0);
   const { toast } = useToast();
@@ -119,9 +120,46 @@ const SplitPdf = () => {
           setIsProcessing(false);
           return;
         }
+      } else if (splitMode === 'split-range') {
+        const start = parseInt(rangeStart);
+        const end = parseInt(rangeEnd);
+        
+        if (isNaN(start) || isNaN(end) || start < 1 || end > totalPages || start > end) {
+          toast({
+            title: "Invalid range",
+            description: "Please enter valid start and end page numbers.",
+            variant: "destructive"
+          });
+          setIsProcessing(false);
+          return;
+        }
+        
+        // Create a single PDF with the range of pages
+        const newPdf = await PDFDocument.create();
+        const pageIndices = Array.from({ length: end - start + 1 }, (_, i) => start - 1 + i);
+        const copiedPages = await newPdf.copyPages(sourcePdf, pageIndices);
+        copiedPages.forEach(page => newPdf.addPage(page));
+        
+        const pdfBytes = await newPdf.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `pages-${start}-to-${end}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Success!",
+          description: `Pages ${start} to ${end} extracted and downloaded.`,
+        });
+        setIsProcessing(false);
+        return;
       }
 
-      // Create individual PDFs for each page
+      // Create individual PDFs for each page (for 'all' and 'range' modes)
       const filePromises = pagesToExtract.map(async (pageNum) => {
         const newPdf = await PDFDocument.create();
         const [copiedPage] = await newPdf.copyPages(sourcePdf, [pageNum - 1]);
@@ -242,6 +280,10 @@ const SplitPdf = () => {
                   <RadioGroupItem value="range" id="range" />
                   <Label htmlFor="range">Extract specific pages</Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="split-range" id="split-range" />
+                  <Label htmlFor="split-range">Split range of pages (as single PDF)</Label>
+                </div>
               </RadioGroup>
 
               {splitMode === 'range' && (
@@ -260,10 +302,51 @@ const SplitPdf = () => {
                 </div>
               )}
 
+              {splitMode === 'split-range' && (
+                <div className="mt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="rangeStart">Start Page</Label>
+                      <Input
+                        id="rangeStart"
+                        type="number"
+                        min="1"
+                        max={pageCount}
+                        placeholder="1"
+                        value={rangeStart}
+                        onChange={(e) => setRangeStart(e.target.value)}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="rangeEnd">End Page</Label>
+                      <Input
+                        id="rangeEnd"
+                        type="number"
+                        min="1"
+                        max={pageCount}
+                        placeholder={pageCount.toString()}
+                        value={rangeEnd}
+                        onChange={(e) => setRangeEnd(e.target.value)}
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Extract a continuous range of pages as a single PDF file (e.g., pages 5 to 15)
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-center mt-6">
                 <Button
                   onClick={splitPdf}
-                  disabled={isProcessing || !selectedFile || (splitMode === 'range' && !pageRange.trim())}
+                  disabled={
+                    isProcessing || 
+                    !selectedFile || 
+                    (splitMode === 'range' && !pageRange.trim()) ||
+                    (splitMode === 'split-range' && (!rangeStart || !rangeEnd))
+                  }
                   size="lg"
                   className="bg-red-500 hover:bg-red-600"
                 >
@@ -294,11 +377,11 @@ const SplitPdf = () => {
               </div>
               <div className="flex items-start space-x-3">
                 <span className="bg-red-100 text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">2</span>
-                <p>Choose to split into individual pages or extract specific page ranges</p>
+                <p>Choose splitting method: individual pages, extract specific pages, or split a range as single PDF</p>
               </div>
               <div className="flex items-start space-x-3">
                 <span className="bg-red-100 text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">3</span>
-                <p>Click "Split PDF" to generate separate PDF files and download them automatically</p>
+                <p>Click "Split PDF" to generate and download your PDF files</p>
               </div>
             </div>
           </CardContent>

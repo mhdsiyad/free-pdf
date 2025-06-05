@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ interface ImageFile {
 }
 
 interface PdfSettings {
-  orientation: 'portrait' | 'landscape';
+  orientation: 'portrait' | 'landscape' | 'default';
   pageSize: 'fit' | 'a4';
   margin: 'none' | 'small' | 'large';
 }
@@ -24,7 +23,7 @@ const ImageToPdf = () => {
   const [images, setImages] = useState<ImageFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [settings, setSettings] = useState<PdfSettings>({
-    orientation: 'portrait',
+    orientation: 'default',
     pageSize: 'fit',
     margin: 'small'
   });
@@ -100,7 +99,7 @@ const ImageToPdf = () => {
       
       // Set up PDF dimensions based on settings
       let format: 'a4' | [number, number] = 'a4';
-      let orientation: 'portrait' | 'landscape' = settings.orientation;
+      let orientation: 'portrait' | 'landscape' = 'portrait';
       
       if (settings.pageSize === 'fit' && images.length > 0) {
         // Get dimensions from first image to set custom page size
@@ -117,10 +116,33 @@ const ImageToPdf = () => {
         const pageWidth = img.width * mmPerPixel;
         const pageHeight = img.height * mmPerPixel;
         
-        if (settings.orientation === 'landscape') {
+        // Determine orientation based on settings
+        if (settings.orientation === 'default') {
+          // Use image's natural orientation
+          orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+        } else {
+          orientation = settings.orientation as 'portrait' | 'landscape';
+        }
+        
+        if (orientation === 'landscape') {
           format = [Math.max(pageWidth, pageHeight), Math.min(pageWidth, pageHeight)];
         } else {
           format = [Math.min(pageWidth, pageHeight), Math.max(pageWidth, pageHeight)];
+        }
+      } else {
+        // For A4, determine orientation
+        if (settings.orientation === 'default') {
+          // Check first image to determine default orientation
+          const firstImage = images[0];
+          const img = new Image();
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = firstImage.preview;
+          });
+          orientation = img.width > img.height ? 'landscape' : 'portrait';
+        } else {
+          orientation = settings.orientation as 'portrait' | 'landscape';
         }
       }
       
@@ -271,13 +293,14 @@ const ImageToPdf = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <Label htmlFor="orientation">Page Orientation</Label>
-                <Select value={settings.orientation} onValueChange={(value: 'portrait' | 'landscape') => 
+                <Select value={settings.orientation} onValueChange={(value: 'portrait' | 'landscape' | 'default') => 
                   setSettings(prev => ({ ...prev, orientation: value }))
                 }>
                   <SelectTrigger className="w-full mt-2">
                     <SelectValue placeholder="Select orientation" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="default">Default (image orientation)</SelectItem>
                     <SelectItem value="portrait">Portrait</SelectItem>
                     <SelectItem value="landscape">Landscape</SelectItem>
                   </SelectContent>
