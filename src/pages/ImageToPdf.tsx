@@ -2,7 +2,9 @@
 import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileImage, Download, X, ArrowLeft, Plus } from 'lucide-react';
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileImage, Download, X, ArrowLeft, Plus, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,9 +14,20 @@ interface ImageFile {
   id: string;
 }
 
+interface PdfSettings {
+  orientation: 'portrait' | 'landscape';
+  pageSize: 'fit' | 'a4';
+  margin: 'none' | 'small' | 'large';
+}
+
 const ImageToPdf = () => {
   const [images, setImages] = useState<ImageFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [settings, setSettings] = useState<PdfSettings>({
+    orientation: 'portrait',
+    pageSize: 'fit',
+    margin: 'small'
+  });
   const { toast } = useToast();
 
   const handleFileSelect = useCallback((files: FileList | null) => {
@@ -60,6 +73,15 @@ const ImageToPdf = () => {
     });
   };
 
+  const getMarginValue = (margin: string): number => {
+    switch (margin) {
+      case 'none': return 0;
+      case 'small': return 20;
+      case 'large': return 40;
+      default: return 20;
+    }
+  };
+
   const convertToPdf = async () => {
     if (images.length === 0) {
       toast({
@@ -75,7 +97,40 @@ const ImageToPdf = () => {
     try {
       // Import jsPDF dynamically
       const { jsPDF } = await import('jspdf');
-      const pdf = new jsPDF();
+      
+      // Set up PDF dimensions based on settings
+      let format: 'a4' | [number, number] = 'a4';
+      let orientation: 'portrait' | 'landscape' = settings.orientation;
+      
+      if (settings.pageSize === 'fit' && images.length > 0) {
+        // Get dimensions from first image to set custom page size
+        const firstImage = images[0];
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = firstImage.preview;
+        });
+        
+        // Convert pixels to mm (assuming 96 DPI)
+        const mmPerPixel = 0.264583333;
+        const pageWidth = img.width * mmPerPixel;
+        const pageHeight = img.height * mmPerPixel;
+        
+        if (settings.orientation === 'landscape') {
+          format = [Math.max(pageWidth, pageHeight), Math.min(pageWidth, pageHeight)];
+        } else {
+          format = [Math.min(pageWidth, pageHeight), Math.max(pageWidth, pageHeight)];
+        }
+      }
+      
+      const pdf = new jsPDF({
+        orientation,
+        unit: 'mm',
+        format
+      });
+      
+      const margin = getMarginValue(settings.margin);
       
       for (let i = 0; i < images.length; i++) {
         const image = images[i];
@@ -90,23 +145,29 @@ const ImageToPdf = () => {
 
         const img = await loadImage;
         
-        // Calculate dimensions to fit page while maintaining aspect ratio
+        // Calculate dimensions based on settings
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
-        const margin = 20;
         
         const maxWidth = pageWidth - (margin * 2);
         const maxHeight = pageHeight - (margin * 2);
         
         let { width, height } = img;
         
-        // Scale down if image is larger than page
-        const widthRatio = maxWidth / width;
-        const heightRatio = maxHeight / height;
-        const ratio = Math.min(widthRatio, heightRatio, 1);
-        
-        width *= ratio;
-        height *= ratio;
+        if (settings.pageSize === 'a4') {
+          // Scale to fit A4 page while maintaining aspect ratio
+          const widthRatio = maxWidth / width;
+          const heightRatio = maxHeight / height;
+          const ratio = Math.min(widthRatio, heightRatio, 1);
+          
+          width *= ratio;
+          height *= ratio;
+        } else {
+          // For 'fit' mode, use original image proportions within page bounds
+          const mmPerPixel = 0.264583333;
+          width = Math.min(img.width * mmPerPixel, maxWidth);
+          height = Math.min(img.height * mmPerPixel, maxHeight);
+        }
         
         // Center the image on the page
         const x = (pageWidth - width) / 2;
@@ -198,6 +259,65 @@ const ImageToPdf = () => {
           </CardContent>
         </Card>
 
+        {/* PDF Settings */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Settings className="h-5 w-5 mr-2" />
+              PDF Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <Label htmlFor="orientation">Page Orientation</Label>
+                <Select value={settings.orientation} onValueChange={(value: 'portrait' | 'landscape') => 
+                  setSettings(prev => ({ ...prev, orientation: value }))
+                }>
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue placeholder="Select orientation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="portrait">Portrait</SelectItem>
+                    <SelectItem value="landscape">Landscape</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="pageSize">Page Size</Label>
+                <Select value={settings.pageSize} onValueChange={(value: 'fit' | 'a4') => 
+                  setSettings(prev => ({ ...prev, pageSize: value }))
+                }>
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue placeholder="Select page size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fit">Fit (same as image)</SelectItem>
+                    <SelectItem value="a4">A4</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="margin">Margin</Label>
+                <Select value={settings.margin} onValueChange={(value: 'none' | 'small' | 'large') => 
+                  setSettings(prev => ({ ...prev, margin: value }))
+                }>
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue placeholder="Select margin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No margin</SelectItem>
+                    <SelectItem value="small">Small margin</SelectItem>
+                    <SelectItem value="large">Large margin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Image Preview Grid */}
         {images.length > 0 && (
           <Card className="mb-8">
@@ -262,11 +382,15 @@ const ImageToPdf = () => {
               </div>
               <div className="flex items-start space-x-3">
                 <span className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">2</span>
-                <p>Review your images in the preview grid. Remove any unwanted images by clicking the X button</p>
+                <p>Configure PDF settings: choose orientation (Portrait/Landscape), page size (Fit/A4), and margin options</p>
               </div>
               <div className="flex items-start space-x-3">
                 <span className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">3</span>
-                <p>Click "Convert to PDF" to generate and download your PDF file</p>
+                <p>Review your images in the preview grid. Remove any unwanted images by clicking the X button</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <span className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">4</span>
+                <p>Click "Convert to PDF" to generate and download your PDF file with the selected settings</p>
               </div>
             </div>
           </CardContent>
