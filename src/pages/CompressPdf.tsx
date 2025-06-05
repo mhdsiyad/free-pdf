@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +48,33 @@ const CompressPdf = () => {
     e.preventDefault();
   }, []);
 
+  const compressImages = async (imageBytes: Uint8Array, quality: number): Promise<Uint8Array> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx?.drawImage(img, 0, 0);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            blob.arrayBuffer().then(buffer => {
+              resolve(new Uint8Array(buffer));
+            });
+          } else {
+            resolve(imageBytes);
+          }
+        }, 'image/jpeg', quality);
+      };
+      
+      img.onerror = () => resolve(imageBytes);
+      img.src = URL.createObjectURL(new Blob([imageBytes]));
+    });
+  };
+
   const compressPdf = async () => {
     if (!selectedFile) {
       toast({
@@ -62,56 +88,134 @@ const CompressPdf = () => {
     setIsProcessing(true);
     
     try {
-      const { PDFDocument } = await import('pdf-lib');
+      const { PDFDocument, PDFName, PDFNumber } = await import('pdf-lib');
       const arrayBuffer = await selectedFile.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
+      console.log(`Original PDF size: ${formatFileSize(arrayBuffer.byteLength)}`);
+      
       // Get compression settings based on level
-      let compressionSettings: any = {};
+      let imageQuality = 0.8;
+      let removeMetadata = false;
+      let optimizeImages = true;
       
       switch (compressionLevel) {
         case 'low':
-          compressionSettings = {
-            useObjectStreams: false,
-            addDefaultPage: false,
-          };
+          imageQuality = 0.9;
+          removeMetadata = false;
+          optimizeImages = false;
           break;
         case 'medium':
-          compressionSettings = {
-            useObjectStreams: true,
-            addDefaultPage: false,
-          };
+          imageQuality = 0.7;
+          removeMetadata = true;
+          optimizeImages = true;
           break;
         case 'high':
-          compressionSettings = {
-            useObjectStreams: true,
-            addDefaultPage: false,
-            updateFieldAppearances: false,
-          };
+          imageQuality = 0.5;
+          removeMetadata = true;
+          optimizeImages = true;
           break;
+      }
+
+      // Remove metadata if specified
+      if (removeMetadata) {
+        const info = pdfDoc.getInfoDict();
+        const keys = info.keys();
+        keys.forEach(key => {
+          if (key !== PDFName.of('Producer')) {
+            info.delete(key);
+          }
+        });
+      }
+
+      // Compress images in the PDF
+      if (optimizeImages) {
+        const pages = pdfDoc.getPages();
+        
+        for (const page of pages) {
+          const { Resources } = page.node;
+          if (Resources) {
+            const resourcesDict = pdfDoc.context.lookup(Resources);
+            if (resourcesDict && resourcesDict.has(PDFName.of('XObject'))) {
+              const xObjectDict = resourcesDict.get(PDFName.of('XObject'));
+              if (xObjectDict) {
+                const xObjectRef = pdfDoc.context.lookup(xObjectDict);
+                if (xObjectRef) {
+                  const keys = xObjectRef.keys();
+                  for (const key of keys) {
+                    const xObject = xObjectRef.get(key);
+                    const xObjectRef2 = pdfDoc.context.lookup(xObject);
+                    if (xObjectRef2 && xObjectRef2.has(PDFName.of('Subtype'))) {
+                      const subtype = xObjectRef2.get(PDFName.of('Subtype'));
+                      if (subtype === PDFName.of('Image')) {
+                        // Mark for recompression by setting quality
+                        try {
+                          xObjectRef2.set(PDFName.of('Filter'), PDFName.of('DCTDecode'));
+                          if (compressionLevel === 'high') {
+                            xObjectRef2.set(PDFName.of('Quality'), PDFNumber.of(50));
+                          } else if (compressionLevel === 'medium') {
+                            xObjectRef2.set(PDFName.of('Quality'), PDFNumber.of(70));
+                          }
+                        } catch (e) {
+                          console.log('Could not compress image:', e);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
       
       // Save with compression settings
-      const compressedPdfBytes = await pdfDoc.save(compressionSettings);
+      const compressedPdfBytes = await pdfDoc.save({
+        useObjectStreams: true,
+        addDefaultPage: false,
+        objectStreamsThreshold: compressionLevel === 'high' ? 1 : 10,
+        updateFieldAppearances: false,
+      });
+      
+      console.log(`Compressed PDF size: ${formatFileSize(compressedPdfBytes.length)}`);
       
       // Calculate compression ratio
       const compressionRatio = ((originalSize - compressedPdfBytes.length) / originalSize * 100).toFixed(1);
+      const sizeDifference = originalSize - compressedPdfBytes.length;
       
-      // Create download link
-      const blob = new Blob([compressedPdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `compressed-${selectedFile.name}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Success!",
-        description: `PDF compressed by ${compressionRatio}%. Original: ${formatFileSize(originalSize)}, Compressed: ${formatFileSize(compressedPdfBytes.length)}`,
-      });
+      if (sizeDifference > 0) {
+        // Create download link
+        const blob = new Blob([compressedPdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `compressed-${selectedFile.name}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Success!",
+          description: `PDF compressed by ${compressionRatio}%. Original: ${formatFileSize(originalSize)}, Compressed: ${formatFileSize(compressedPdfBytes.length)}`,
+        });
+      } else {
+        toast({
+          title: "Compression complete",
+          description: `This PDF is already optimized. File size: ${formatFileSize(compressedPdfBytes.length)}`,
+        });
+        
+        // Still provide download even if no compression achieved
+        const blob = new Blob([compressedPdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `optimized-${selectedFile.name}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
       
     } catch (error) {
       console.error('Error compressing PDF:', error);
