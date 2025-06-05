@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileImage, FileText, Scissors, ArrowRight } from 'lucide-react';
+import { FileImage, FileText, Scissors, Archive, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const Index = () => {
@@ -30,6 +30,14 @@ const Index = () => {
       color: "bg-red-500",
       hoverColor: "hover:bg-red-600",
       path: "/split-pdf"
+    },
+    {
+      title: "Compress PDF",
+      description: "Reduce file size while optimizing for maximal PDF quality",
+      icon: Archive,
+      color: "bg-purple-500",
+      hoverColor: "hover:bg-purple-600",
+      path: "/compress-pdf"
     }
   ];
 
@@ -55,12 +63,12 @@ const Index = () => {
             Free PDF Tools for Everyone
           </h2>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Convert images to PDF, merge multiple PDFs, and split documents - all for free with no size limits or registration required.
+            Convert images to PDF, merge multiple PDFs, split documents, and compress files - all for free with no size limits or registration required.
           </p>
         </div>
 
         {/* Tools Grid */}
-        <div className="grid md:grid-cols-3 gap-8 mb-12">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           {tools.map((tool, index) => {
             const IconComponent = tool.icon;
             return (

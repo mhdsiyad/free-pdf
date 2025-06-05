@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import ImageToPdf from "./pages/ImageToPdf";
 import MergePdf from "./pages/MergePdf";
 import SplitPdf from "./pages/SplitPdf";
+import CompressPdf from "./pages/CompressPdf";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/image-to-pdf" element={<ImageToPdf />} />
           <Route path="/merge-pdf" element={<MergePdf />} />
           <Route path="/split-pdf" element={<SplitPdf />} />
+          <Route path="/compress-pdf" element={<CompressPdf />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
