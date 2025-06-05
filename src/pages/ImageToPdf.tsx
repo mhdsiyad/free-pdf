@@ -96,43 +96,74 @@ const ImageToPdf = () => {
     try {
       // Import jsPDF dynamically
       const { jsPDF } = await import('jspdf');
-      
-      // Set up PDF dimensions based on settings
-      let format: 'a4' | [number, number] = 'a4';
-      let orientation: 'portrait' | 'landscape' = 'portrait';
-      
-      if (settings.pageSize === 'fit' && images.length > 0) {
-        // Get dimensions from first image to set custom page size
-        const firstImage = images[0];
-        const img = new Image();
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = firstImage.preview;
-        });
-        
-        // Convert pixels to mm (assuming 96 DPI)
-        const mmPerPixel = 0.264583333;
-        const pageWidth = img.width * mmPerPixel;
-        const pageHeight = img.height * mmPerPixel;
-        
-        // Determine orientation based on settings
-        if (settings.orientation === 'default') {
-          // Use image's natural orientation
-          orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
-        } else {
-          orientation = settings.orientation as 'portrait' | 'landscape';
-        }
-        
-        if (orientation === 'landscape') {
-          format = [Math.max(pageWidth, pageHeight), Math.min(pageWidth, pageHeight)];
-        } else {
-          format = [Math.min(pageWidth, pageHeight), Math.max(pageWidth, pageHeight)];
+      const margin = getMarginValue(settings.margin);
+      let pdf: any = null;
+
+      if (settings.pageSize === 'fit') {
+        for (let i = 0; i < images.length; i++) {
+          const image = images[i];
+          // Load image
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const tempImg = new Image();
+            tempImg.onload = () => resolve(tempImg);
+            tempImg.onerror = reject;
+            tempImg.src = image.preview;
+          });
+
+          // Convert pixels to mm (assuming 96 DPI)
+          const mmPerPixel = 0.264583333;
+          const pageWidth = img.width * mmPerPixel;
+          const pageHeight = img.height * mmPerPixel;
+
+          // Determine orientation for this image
+          let orientation: 'portrait' | 'landscape' = 'portrait';
+          if (settings.orientation === 'default') {
+            orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+          } else {
+            orientation = settings.orientation as 'portrait' | 'landscape';
+          }
+
+          // Set format for this page
+          let format: [number, number];
+          if (orientation === 'landscape') {
+            format = [Math.max(pageWidth, pageHeight), Math.min(pageWidth, pageHeight)];
+          } else {
+            format = [Math.min(pageWidth, pageHeight), Math.max(pageWidth, pageHeight)];
+          }
+
+          // Create or add page
+          if (i === 0) {
+            pdf = new jsPDF({
+              orientation,
+              unit: 'mm',
+              format
+            });
+          } else {
+            pdf.addPage(format, orientation);
+          }
+
+          // Calculate max image size with margin
+          const pdfPageWidth = pdf.internal.pageSize.getWidth();
+          const pdfPageHeight = pdf.internal.pageSize.getHeight();
+          const maxWidth = pdfPageWidth - (margin * 2);
+          const maxHeight = pdfPageHeight - (margin * 2);
+
+          // Scale image to fit within margins
+          let width = Math.min(pageWidth, maxWidth);
+          let height = Math.min(pageHeight, maxHeight);
+
+          // Center the image
+          const x = (pdfPageWidth - width) / 2;
+          const y = (pdfPageHeight - height) / 2;
+
+          pdf.setPage(i + 1);
+          pdf.addImage(img, 'JPEG', x, y, width, height);
         }
       } else {
-        // For A4, determine orientation
+        // A4 logic remains unchanged
+        let format: 'a4' = 'a4';
+        let orientation: 'portrait' | 'landscape' = 'portrait';
         if (settings.orientation === 'default') {
-          // Check first image to determine default orientation
           const firstImage = images[0];
           const img = new Image();
           await new Promise((resolve, reject) => {
@@ -144,72 +175,47 @@ const ImageToPdf = () => {
         } else {
           orientation = settings.orientation as 'portrait' | 'landscape';
         }
-      }
-      
-      const pdf = new jsPDF({
-        orientation,
-        unit: 'mm',
-        format
-      });
-      
-      const margin = getMarginValue(settings.margin);
-      
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        
-        // Create a promise to load the image
-        const loadImage = new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = reject;
-          img.src = image.preview;
+        pdf = new jsPDF({
+          orientation,
+          unit: 'mm',
+          format
         });
-
-        const img = await loadImage;
-        
-        // Calculate dimensions based on settings
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        
-        const maxWidth = pageWidth - (margin * 2);
-        const maxHeight = pageHeight - (margin * 2);
-        
-        let { width, height } = img;
-        
-        if (settings.pageSize === 'a4') {
+        for (let i = 0; i < images.length; i++) {
+          const image = images[i];
+          const loadImage = new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = image.preview;
+          });
+          const img = await loadImage;
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const maxWidth = pageWidth - (margin * 2);
+          const maxHeight = pageHeight - (margin * 2);
+          let { width, height } = img;
           // Scale to fit A4 page while maintaining aspect ratio
           const widthRatio = maxWidth / width;
           const heightRatio = maxHeight / height;
           const ratio = Math.min(widthRatio, heightRatio, 1);
-          
           width *= ratio;
           height *= ratio;
-        } else {
-          // For 'fit' mode, use original image proportions within page bounds
-          const mmPerPixel = 0.264583333;
-          width = Math.min(img.width * mmPerPixel, maxWidth);
-          height = Math.min(img.height * mmPerPixel, maxHeight);
+          const x = (pageWidth - width) / 2;
+          const y = (pageHeight - height) / 2;
+          if (i > 0) {
+            pdf.addPage();
+          }
+          pdf.setPage(i + 1);
+          pdf.addImage(img, 'JPEG', x, y, width, height);
         }
-        
-        // Center the image on the page
-        const x = (pageWidth - width) / 2;
-        const y = (pageHeight - height) / 2;
-        
-        if (i > 0) {
-          pdf.addPage();
-        }
-        
-        pdf.addImage(img, 'JPEG', x, y, width, height);
       }
-      
+
       // Download the PDF
       pdf.save('converted-images.pdf');
-      
       toast({
         title: "Success!",
         description: `PDF created with ${images.length} page(s) and downloaded successfully.`,
       });
-      
     } catch (error) {
       console.error('Error converting to PDF:', error);
       toast({

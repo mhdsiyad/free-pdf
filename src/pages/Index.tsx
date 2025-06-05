@@ -130,7 +130,7 @@ const Index = () => {
       <footer className="bg-gray-900 text-white py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-gray-400">
-            © 2024 PDF Generator. All rights reserved. Built with ❤️ for everyone.
+          © 2025 Free PDF Tools for Everyone. by <a href="https://koooi.fun" className="text-blue-400" target="_blank" rel="noopener noreferrer">Koooi</a>
           </p>
         </div>
       </footer>
